@@ -5,10 +5,10 @@ VERSION=1.1
 
 # 各变量默认值
 CDN='https://ghproxy.com'
-SERVER_DEFAULT='cn.king361.link'
-UUID_DEFAULT='157aeb1c-6137-4dea-ad53-93b35d61563f'
+SERVER_DEFAULT='icook.tw'
+UUID_DEFAULT='ffffffff-ffff-ffff-ffff-ffffffffffff'
 WS_PATH_DEFAULT='argox'
-WORK_DIR='$HOME/etc/argox'
+WORK_DIR='/opt/suan1'
 CLOUDFLARED_PORT='54321'
 TEMP_DIR='/tmp/argox'
 
@@ -137,6 +137,7 @@ select_language() {
   fi
 }
 
+
 check_arch() {
   # 判断处理器架构
   case $(uname -m) in
@@ -150,8 +151,8 @@ check_arch() {
 
 # 查安装及运行状态，下标0: argo，下标1: xray，下标2：docker；状态码: 26 未安装， 27 已安装未运行， 28 运行中
 check_install() {
-  STATUS[0]=$(text 26) && [ -s /etc/systemd/system/argo.service ] && STATUS[0]=$(text 27) && [ "$(systemctl is-active argo)" = 'active' ] && STATUS[0]=$(text 28)
-  STATUS[1]=$(text 26) && [ -s /etc/systemd/system/xray.service ] && STATUS[1]=$(text 27) && [ "$(systemctl is-active xray)" = 'active' ] && STATUS[1]=$(text 28)
+  STATUS[0]=$(text 26) && [ -s ~/.config/systemd/user/argo.service ] && STATUS[0]=$(text 27) && [ "$(systemctl is-active argo)" = 'active' ] && STATUS[0]=$(text 28)
+  STATUS[1]=$(text 26) && [ -s ~/.config/systemd/user/xray.service ] && STATUS[1]=$(text 27) && [ "$(systemctl is-active xray)" = 'active' ] && STATUS[1]=$(text 28)
   [[ ${STATUS[0]} = "$(text 26)" ]] && [ ! -s $WORK_DIR/cloudflared ] && { wget -qO $TEMP_DIR/cloudflared $CDN/https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-$ARGO_ARCH >/dev/null 2>&1 && chmod +x $TEMP_DIR/cloudflared >/dev/null 2>&1; }&
   [[ ${STATUS[1]} = "$(text 26)" ]] && [ ! -s $WORK_DIR/xray ] && { wget -qO $TEMP_DIR/Xray.zip $CDN/https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-$XRAY_ARCH.zip >/dev/null 2>&1; unzip -qo $TEMP_DIR/Xray.zip xray *.dat -d $TEMP_DIR >/dev/null 2>&1; }&
 }
@@ -294,7 +295,7 @@ install_argox() {
   argo_variable
   xray_variable
   wait
-  [ ! -d /etc/systemd/system ] && mkdir -p /etc/systemd/system
+  [ ! -d ~/.config/systemd/user ] && mkdir -p ~/.config/systemd/user
   mkdir -p $WORK_DIR && echo "$L" > $WORK_DIR/language
   [ -s "$VARIABLE_FILE" ] && cp $VARIABLE_FILE $WORK_DIR/
   # Argo 生成守护进程文件
@@ -310,9 +311,7 @@ install_argox() {
     ARGO_RUNS="$WORK_DIR/cloudflared tunnel --edge-ip-version auto --no-autoupdate --protocol http2 --metrics localhost:$CLOUDFLARED_PORT --url http://localhost:8080"
   fi
 
-SYSTEMD_DIR=$HOME/.config/systemd/user
-mkdir -p $SYSTEMD_DIR
-cat > $SYSTEMD_DIR/argo.service << EOF
+  cat > ~/.config/systemd/user/argo.service << EOF
 [Unit]
 Description=Cloudflare Tunnel
 After=network.target
@@ -525,7 +524,7 @@ EOF
 }
 EOF
 
-  cat > $SYSTEMD_DIR/xray.service << EOF
+  cat > ~/.config/systemd/user/xray.service << EOF
 [Unit]
 Description=Xray Service
 Documentation=https://github.com/XTLS/Xray-core
@@ -545,16 +544,16 @@ EOF
 
   # 再次检测状态，运行 Argo 和 Xray
   check_install
-  [[ ${STATUS[0]} = "$(text 27)" ]] && systemctl --user enable --now argo && info "\n Argo $(text 28) $(text 37) \n" || warning "\n Argo $(text 28) $(text 38) \n"
-  [[ ${STATUS[1]} = "$(text 27)" ]] && systemctl --user enable --now xray && info "\n Xray $(text 28) $(text 37) \n" || warning "\n Xray $(text 28) $(text 38) \n"
+  [[ ${STATUS[0]} = "$(text 27)" ]] && systemctl enable --now argo && info "\n Argo $(text 28) $(text 37) \n" || warning "\n Argo $(text 28) $(text 38) \n"
+  [[ ${STATUS[1]} = "$(text 27)" ]] && systemctl enable --now xray && info "\n Xray $(text 28) $(text 37) \n" || warning "\n Xray $(text 28) $(text 38) \n"
   
   # 如果 Alpine 系统，放到开机自启动
   if [ "$SYSTEM" = 'Alpine' ]; then
     cat > /etc/local.d/argox.start << EOF
 #!/usr/bin/env bash
 
-systemctl --user start argo
-systemctl --user start xray
+systemctl start argo
+systemctl start xray
 EOF
     chmod +x /etc/local.d/argox.start
     rc-update add local
@@ -564,7 +563,7 @@ EOF
 export_list() {
   check_install
 
-  if grep -q "^ExecStart.*8080$" /etc/systemd/system/argo.service; then
+  if grep -q "^ExecStart.*8080$" ~/.config/systemd/user/argo.service; then
     sleep 5 && ARGO_DOMAIN=$(wget -qO- http://localhost:$CLOUDFLARED_PORT/quicktunnel | cut -d\" -f4)
   else
     ARGO_DOMAIN=${ARGO_DOMAIN:-"$(grep -m1 '^vless' $WORK_DIR/list | sed "s@.*host=\(.*\)&.*@\1@g")"}
@@ -616,7 +615,7 @@ change_argo() {
   check_install
   [[ ${STATUS[0]} = "$(text 26)" ]] && error " $(text 39) "
 
-  case $(grep "ExecStart" $SYSTEMD_DIR/argo.service) in 
+  case $(grep "ExecStart" ~/.config/systemd/user/argo.service) in 
     *--config* ) ARGO_TYPE='Json'; ARGO_DOMAIN="$(grep -m1 '^vless' $WORK_DIR/list | sed "s@.*host=\(.*\)&.*@\1@g")" ;;
     *--token* ) ARGO_TYPE='Token'; ARGO_DOMAIN="$(grep -m1 '^vless' $WORK_DIR/list | sed "s@.*host=\(.*\)&.*@\1@g")" ;;
     * ) ARGO_TYPE='Try'; ARGO_DOMAIN=$(wget -qO- http://localhost:$CLOUDFLARED_PORT/quicktunnel | cut -d\" -f4) ;;
@@ -626,22 +625,22 @@ change_argo() {
   unset ARGO_DOMAIN
   hint " $(text 41) \n" && reading " $(text 24) " CHANGE_TO
     case "$CHANGE_TO" in
-      1 ) systemctl --user disable --now argo
+      1 ) systemctl disable --now argo
           [ -s $WORK_DIR/tunnel.json ] && rm -f $WORK_DIR/tunnel.{json,yml}
-          sed -i "s@ExecStart.*@ExecStart=$WORK_DIR/cloudflared tunnel --edge-ip-version auto --protocol http2 --no-autoupdate --metrics localhost:$CLOUDFLARED_PORT --url http://localhost:8080@g" /etc/systemd/system/argo.service
-          systemctl --user enable --now argo
+          sed -i "s@ExecStart.*@ExecStart=$WORK_DIR/cloudflared tunnel --edge-ip-version auto --protocol http2 --no-autoupdate --metrics localhost:$CLOUDFLARED_PORT --url http://localhost:8080@g" ~/.config/systemd/user/argo.service
+          systemctl enable --now argo
           ;;
       2 ) argo_variable
-          systemctl --user disable --now argo
+          systemctl disable --now argo
           if [ -n "$ARGO_TOKEN" ]; then
             [ -s $WORK_DIR/tunnel.json ] && rm -f $WORK_DIR/tunnel.{json,yml}
-            sed -i "s@ExecStart.*@ExecStart=$WORK_DIR/cloudflared tunnel --edge-ip-version auto --protocol http2 run --token ${ARGO_TOKEN}@g" /etc/systemd/system/argo.service
+            sed -i "s@ExecStart.*@ExecStart=$WORK_DIR/cloudflared tunnel --edge-ip-version auto --protocol http2 run --token ${ARGO_TOKEN}@g" ~/.config/systemd/user/argo.service
           elif [ -n "$ARGO_JSON" ]; then
             [ -s $WORK_DIR/tunnel.json ] && rm -f $WORK_DIR/tunnel.{json,yml}
             json_argo            
-            sed -i "s@ExecStart.*@ExecStart=$WORK_DIR/cloudflared tunnel --edge-ip-version auto --config $WORK_DIR/tunnel.yml run@g" /etc/systemd/system/argo.service
+            sed -i "s@ExecStart.*@ExecStart=$WORK_DIR/cloudflared tunnel --edge-ip-version auto --config $WORK_DIR/tunnel.yml run@g" ~/.config/systemd/user/argo.service
           fi
-          systemctl --user enable --now argo
+          systemctl enable --now argo
           ;;
       * ) exit 0
           ;;
@@ -652,8 +651,8 @@ change_argo() {
 
 uninstall() {
   if [ -d $WORK_DIR ]; then
-    systemctl --user disable --now {argo,xray} 2>/dev/null
-    rm -rf $WORK_DIR $TEMP_DIR $SYSTEMD_DIR/{xray,argo}.service
+    systemctl disable --now {argo,xray} 2>/dev/null
+    rm -rf $WORK_DIR $TEMP_DIR ~/.config/systemd/user/{xray,argo}.service
     info "\n $(text 16) \n"
   else
     error "\n $(text 15) \n"
