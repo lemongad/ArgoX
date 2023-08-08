@@ -770,7 +770,6 @@ while getopts ":SsUuVvLlF:f:" OPTNAME; do
 done
 
 select_language
-check_root
 check_arch
 check_system_info
 check_dependencies
